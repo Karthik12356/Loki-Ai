@@ -1,0 +1,1091 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>LOKI // PERSONAL AI</title>
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800;900&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+
+    <style>
+        :root {
+            --neon-cyan: #00f3ff;
+            --neon-blue: #0066ff;
+            --neon-magenta: #ff00ff;
+            --neon-red: #ff3333;
+            --bg-dark: #010205;
+            --nothing-border: rgba(255, 255, 255, 0.1);
+        }
+
+        * {
+            box-sizing: border-box;
+            -webkit-tap-highlight-color: transparent;
+            touch-action: manipulation;
+        }
+
+        html, body {
+            margin: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background: var(--bg-dark);
+            background: radial-gradient(circle at center, #030612 0%, var(--bg-dark) 100%);
+            color: #fff;
+            font-family: 'Inter', sans-serif;
+            overscroll-behavior: none;
+        }
+
+        .mono {
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        /* ThreeJS Canvas strictly in background */
+        #threeCanvas {
+            position: fixed;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 1;
+            pointer-events: none;
+        }
+
+        /* Subtle scanlines for cinematic effect */
+        #scanlines {
+            position: fixed;
+            inset: 0;
+            z-index: 2;
+            pointer-events: none;
+            background: repeating-linear-gradient(
+                to bottom,
+                rgba(255,255,255,0.015) 0px,
+                rgba(255,255,255,0.015) 1px,
+                transparent 2px,
+                transparent 4px
+            );
+        }
+
+        #ui-layer {
+            position: fixed;
+            inset: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+            z-index: 10;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            padding: 30px;
+            pointer-events: none; /* Let clicks pass through to background if needed */
+        }
+
+        /* Top Bar - ALWAYS VISIBLE */
+        #top-bar {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            width: 100%;
+            pointer-events: auto;
+        }
+
+        .brand-text {
+            font-size: 28px;
+            font-weight: 900;
+            letter-spacing: 8px;
+            text-shadow: 0 0 20px rgba(0, 243, 255, 0.3);
+        }
+        
+        .brand-sub {
+            font-size: 9px;
+            letter-spacing: 5px;
+            color: var(--neon-cyan);
+            margin-top: 4px;
+        }
+
+        /* Telemetry Widgets - HIDDEN BY DEFAULT */
+        #widgets-container {
+            position: absolute;
+            inset: 80px 30px 150px 30px;
+            display: flex;
+            justify-content: space-between;
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+            z-index: 15;
+        }
+        
+        #widgets-container.visible {
+            opacity: 1;
+            pointer-events: auto;
+        }
+
+        .widget {
+            background: rgba(1, 2, 5, 0.6);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid var(--nothing-border);
+            border-radius: 12px;
+            padding: 16px;
+            margin-bottom: 16px;
+        }
+
+        .widget-title {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 10px;
+            letter-spacing: 3px;
+            color: rgba(255, 255, 255, 0.6);
+            text-transform: uppercase;
+            margin-bottom: 12px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .tv-on {
+            background: rgba(0, 243, 255, 0.15);
+            border: 2px solid var(--neon-cyan);
+            color: var(--neon-cyan);
+            box-shadow: 0 0 25px rgba(0, 243, 255, 0.4);
+            cursor: pointer;
+        }
+        
+        .tv-off {
+            background: rgba(255, 51, 51, 0.05);
+            border: 2px solid rgba(255, 51, 51, 0.3);
+            color: rgba(255, 51, 51, 0.6);
+            cursor: pointer;
+        }
+        .tv-off:hover {
+            border-color: rgba(255, 51, 51, 0.8);
+            color: rgba(255, 51, 51, 1);
+        }
+
+        .status-dot {
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--neon-cyan);
+            box-shadow: 0 0 10px var(--neon-cyan);
+        }
+        .status-dot.offline { background: #444; box-shadow: none; }
+        .status-dot.processing { background: var(--neon-magenta); animation: pulse 1s infinite; }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.4; }
+        }
+
+        #bottom-area {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            width: 100%;
+            pointer-events: auto;
+        }
+
+        #transcript-area {
+            text-align: center;
+            margin-bottom: 30px;
+            min-height: 60px;
+            width: 100%;
+            max-width: 600px;
+        }
+
+        #user-text { 
+            opacity: 0.5; 
+            font-size: 12px; 
+            letter-spacing: 2px;
+            margin-bottom: 8px; 
+            text-transform: uppercase;
+        }
+        
+        #loki-text { 
+            font-size: 16px; 
+            color: #fff; 
+            text-shadow: 0 0 12px rgba(255, 255, 255, 0.4); 
+            font-weight: 400; 
+            letter-spacing: 1px;
+            line-height: 1.4;
+        }
+
+        .btn-large {
+            background: rgba(0, 243, 255, 0.05);
+            border: 1px solid rgba(0, 243, 255, 0.4);
+            color: var(--neon-cyan);
+            padding: 16px 48px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 14px;
+            letter-spacing: 5px;
+            border-radius: 100px;
+            cursor: pointer;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            text-transform: uppercase;
+            box-shadow: 0 0 20px rgba(0, 243, 255, 0.1);
+            backdrop-filter: blur(10px);
+        }
+
+        .btn-large:active { transform: scale(0.96); }
+        
+        .btn-large.listening {
+            background: rgba(255, 0, 255, 0.15);
+            border-color: var(--neon-magenta);
+            color: #fff;
+            box-shadow: 0 0 30px rgba(255, 0, 255, 0.4);
+            animation: border-pulse 1.5s infinite;
+        }
+
+        @keyframes border-pulse {
+            0%, 100% { border-color: rgba(255,0,255,0.3); }
+            50% { border-color: rgba(255,0,255,1); }
+        }
+
+        @media (max-width: 768px) {
+            #ui-layer { padding: 20px; }
+            #widgets-container { inset: 80px 20px 180px 20px; flex-direction: column; overflow-y: auto; }
+            .brand-text { font-size: 20px; }
+            .btn-large { padding: 14px 32px; font-size: 12px; width: 100%; max-width: 300px; }
+        }
+    </style>
+</head>
+<body>
+
+    <div id="threeCanvas"></div>
+    <div id="scanlines"></div>
+
+    <div id="ui-layer">
+        
+        <!-- Top Bar: Clock & Brand -->
+        <div id="top-bar">
+            <div>
+                <div class="brand-text">LOKI</div>
+                <div class="brand-sub">NEURAL OS ULTRA</div>
+            </div>
+            <div class="text-right">
+                <div id="clock-time" class="mono text-2xl font-bold tracking-widest text-[var(--neon-cyan)] drop-shadow-[0_0_10px_rgba(0,243,255,0.5)]">--:--</div>
+                <div id="clock-date" class="mono text-[10px] opacity-50 mt-1 uppercase tracking-widest">--------</div>
+            </div>
+        </div>
+
+        <!-- Widgets Layer: Hidden until asked -->
+        <div id="widgets-container">
+            <!-- Spotify Dynamic Widget -->
+            <div class="flex flex-col w-full md:w-[300px]" id="spotify-widget-container" style="display: none;">
+                <div class="widget border-[#1DB954]/30">
+                    <div class="widget-title text-[#1DB954]">SPOTIFY LINK <span class="status-dot" style="background:#1DB954; box-shadow:0 0 10px #1DB954;"></span></div>
+                    <iframe id="spotify-iframe" src="" width="100%" height="152" frameBorder="0" allowfullscreen="" allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture" loading="lazy" class="rounded-lg mt-2 opacity-80 hover:opacity-100 transition-opacity"></iframe>
+                </div>
+            </div>
+
+            <div class="flex flex-col w-full md:w-[300px]">
+                <div class="widget border-[var(--neon-cyan)]/30">
+                    <div class="widget-title text-[var(--neon-cyan)]">SMARTTHINGS <span id="stat-tv" class="text-[10px] tracking-widest text-white">SEARCHING...</span></div>
+                    <div class="flex flex-col items-center mt-6 mb-4">
+                        <div id="st-device-name" class="mono text-[14px] font-bold tracking-widest mb-6 uppercase text-white/80">TENSHI</div>
+                        <button id="st-power-btn" class="tv-off w-24 h-24 rounded-full flex items-center justify-center transition-all duration-300">
+                            <!-- Power Icon -->
+                            <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M18.36 6.64a9 9 0 1 1-12.73 0"></path>
+                                <line x1="12" y1="2" x2="12" y2="12"></line>
+                            </svg>
+                        </button>
+                        <div id="st-status-text" class="mono text-[10px] mt-6 opacity-50 tracking-widest uppercase">STANDBY</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="flex flex-col w-full md:w-[300px]">
+                <div class="widget border-[var(--neon-magenta)]/30">
+                    <div class="widget-title text-[var(--neon-magenta)]">INSTAGRAM AUTH <span class="status-dot processing"></span></div>
+                    <div class="mono text-[10px] opacity-70 mt-2 leading-relaxed">
+                        SECURITY LOCK ENGAGED.<br><br>
+                        AUTHORIZED ACCOUNT:<br>
+                        <span class="text-white text-[12px] font-bold tracking-widest">@devayodha7</span><br><br>
+                        AWAITING SECURE BACKEND HANDSHAKE FOR GRAPH API ACCESS.
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Transcript & Input -->
+        <div id="bottom-area">
+            <div id="transcript-area" class="mono">
+                <div id="user-text"></div>
+                <div id="loki-text">Neural pathways initialized.</div>
+            </div>
+            <button id="btn-engage" class="btn-large">ENGAGE LOKI</button>
+            
+            <!-- Fallback Text Input (If voice is denied/unsupported) -->
+            <div id="fallback-input-container" style="display: none; margin-top: 20px; width: 100%; max-width: 400px;">
+                <input type="text" id="fallback-input" class="w-full bg-transparent border-b border-[var(--neon-cyan)] text-[var(--neon-cyan)] text-center text-xs p-3 focus:outline-none mono uppercase tracking-widest" placeholder="OR TYPE COMMAND HERE AND PRESS ENTER...">
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const $ = q => document.querySelector(q);
+        
+        // 1. User Interface Controller
+        const UI = {
+            widgetsVisible: false,
+            toggleWidgets: (force) => {
+                UI.widgetsVisible = force !== undefined ? force : !UI.widgetsVisible;
+                if(UI.widgetsVisible) {
+                    $('#widgets-container').classList.add('visible');
+                } else {
+                    $('#widgets-container').classList.remove('visible');
+                }
+            },
+            setTranscript: (userTxt, lokiTxt) => {
+                if(userTxt !== null) $('#user-text').textContent = userTxt ? `USER // ${userTxt}` : '';
+                if(lokiTxt !== null) {
+                    $('#loki-text').style.opacity = 0;
+                    setTimeout(() => {
+                        $('#loki-text').textContent = lokiTxt;
+                        $('#loki-text').style.opacity = 1;
+                        $('#loki-text').style.transition = 'opacity 0.3s ease';
+                    }, 150);
+                }
+            }
+        };
+
+        // 2. Real-time IST Clock
+        setInterval(() => {
+            const now = new Date();
+            // Using en-IN to get local Indian Standard Time formatting automatically
+            $('#clock-time').textContent = now.toLocaleTimeString('en-IN', { hour12: false, hour: '2-digit', minute:'2-digit', second:'2-digit' });
+            $('#clock-date').textContent = now.toLocaleDateString('en-IN', { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' }).toUpperCase();
+        }, 1000);
+
+        const Brain = {
+            scene: null, camera: null, renderer: null, particles: null, lines: null,
+            targetColor: new THREE.Color(0x00f3ff), currentColor: new THREE.Color(0x00f3ff),
+            baseSpeed: 0.001, targetSpeed: 0.001, currentSpeed: 0.001,
+            targetZoom: 200,
+            init: () => {
+                const container = $('#threeCanvas');
+                Brain.scene = new THREE.Scene();
+                Brain.scene.fog = new THREE.FogExp2(0x010205, 0.003);
+                Brain.camera = new THREE.PerspectiveCamera(60, window.innerWidth/window.innerHeight, 1, 1000);
+                Brain.camera.position.z = 200; // Closer for central focus
+                
+                Brain.renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true, powerPreference: "high-performance" });
+                Brain.renderer.setSize(window.innerWidth, window.innerHeight);
+                Brain.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+                container.appendChild(Brain.renderer.domElement);
+
+                // Create Neural Nodes
+                const pCount = window.innerWidth < 768 ? 120 : 250;
+                const geom = new THREE.BufferGeometry();
+                const pos = new Float32Array(pCount * 3);
+                
+                for(let i=0; i<pCount; i++) {
+                    const r = 90 * Math.cbrt(Math.random()); // Tighter core radius
+                    const theta = Math.random() * 2 * Math.PI;
+                    const phi = Math.acos(2 * Math.random() - 1);
+                    pos[i*3] = r * Math.sin(phi) * Math.cos(theta);
+                    pos[i*3+1] = r * Math.sin(phi) * Math.sin(theta);
+                    pos[i*3+2] = r * Math.cos(phi);
+                }
+                geom.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+                
+                const pMat = new THREE.PointsMaterial({ color: 0xffffff, size: 2.5, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending });
+                Brain.particles = new THREE.Points(geom, pMat);
+                Brain.scene.add(Brain.particles);
+
+                // Create Neural Connections
+                const linePos = [];
+                for(let i=0; i<pCount; i++) {
+                    for(let j=i+1; j<pCount; j++) {
+                        const dx = pos[i*3]-pos[j*3], dy = pos[i*3+1]-pos[j*3+1], dz = pos[i*3+2]-pos[j*3+2];
+                        if(dx*dx + dy*dy + dz*dz < 1500) { // Connection distance threshold
+                            linePos.push(pos[i*3], pos[i*3+1], pos[i*3+2], pos[j*3], pos[j*3+1], pos[j*3+2]);
+                        }
+                    }
+                }
+                const lGeom = new THREE.BufferGeometry();
+                lGeom.setAttribute('position', new THREE.Float32BufferAttribute(linePos, 3));
+                const lMat = new THREE.LineBasicMaterial({ color: 0x00f3ff, transparent: true, opacity: 0.2, blending: THREE.AdditiveBlending });
+                Brain.lines = new THREE.LineSegments(lGeom, lMat);
+                Brain.scene.add(Brain.lines);
+
+                window.addEventListener('wheel', (e) => {
+                    Brain.targetZoom += e.deltaY * 0.2;
+                    Brain.targetZoom = Math.max(50, Math.min(Brain.targetZoom, 500));
+                });
+
+                let initialPinch = null;
+                window.addEventListener('touchstart', (e) => {
+                    if (e.touches.length === 2) {
+                        initialPinch = Math.hypot(
+                            e.touches[0].clientX - e.touches[1].clientX,
+                            e.touches[0].clientY - e.touches[1].clientY
+                        );
+                    }
+                }, {passive: false});
+                
+                window.addEventListener('touchmove', (e) => {
+                    if (e.touches.length === 2 && initialPinch) {
+                        const currentPinch = Math.hypot(
+                            e.touches[0].clientX - e.touches[1].clientX,
+                            e.touches[0].clientY - e.touches[1].clientY
+                        );
+                        // Reverse mapping: pinching out decreases distance, zooming in
+                        Brain.targetZoom += (initialPinch - currentPinch) * 0.7;
+                        Brain.targetZoom = Math.max(50, Math.min(Brain.targetZoom, 500));
+                        initialPinch = currentPinch;
+                    }
+                }, {passive: false});
+
+                window.addEventListener('resize', () => {
+                    Brain.camera.aspect = window.innerWidth / window.innerHeight;
+                    Brain.camera.updateProjectionMatrix();
+                    Brain.renderer.setSize(window.innerWidth, window.innerHeight);
+                });
+                Brain.animate();
+            },
+
+            setState: (state) => {
+                // Dynamic visual feedback based on engine state
+                switch(state) {
+                    case 'IDLE': 
+                        Brain.targetSpeed = 0.001; 
+                        Brain.targetColor.setHex(0x00f3ff); // Cyan
+                        break;
+                    case 'LISTENING': 
+                        Brain.targetSpeed = 0.006; 
+                        Brain.targetColor.setHex(0xff00ff); // Magenta
+                        break;
+                    case 'PROCESSING': 
+                        Brain.targetSpeed = 0.02; 
+                        Brain.targetColor.setHex(0x0066ff); // Deep Blue
+                        break;
+                    case 'SPEAKING': 
+                        Brain.targetSpeed = 0.004; 
+                        Brain.targetColor.setHex(0x00f3ff); // Cyan Pulse
+                        break;
+                    case 'ROAST':
+                        Brain.targetSpeed = 0.04;
+                        Brain.targetColor.setHex(0xff0000); // Aggressive Red
+                        break;
+                }
+            },
+
+            animate: () => {
+                requestAnimationFrame(Brain.animate);
+                
+                Brain.camera.position.z += (Brain.targetZoom - Brain.camera.position.z) * 0.08;
+
+                // Smooth interpolation for speed and color transitions
+                Brain.currentSpeed += (Brain.targetSpeed - Brain.currentSpeed) * 0.05;
+                Brain.currentColor.lerp(Brain.targetColor, 0.05);
+
+                Brain.particles.rotation.y += Brain.currentSpeed;
+                Brain.particles.rotation.x += Brain.currentSpeed * 0.5;
+                Brain.lines.rotation.y += Brain.currentSpeed;
+                Brain.lines.rotation.x += Brain.currentSpeed * 0.5;
+
+                Brain.lines.material.color.copy(Brain.currentColor);
+                
+                // Pulse effect when active
+                if(VoiceEngine.state === 'SPEAKING' || VoiceEngine.state === 'LISTENING') {
+                    Brain.lines.material.opacity = 0.2 + (Math.sin(Date.now() * 0.008) * 0.25);
+                } else {
+                    Brain.lines.material.opacity += (0.2 - Brain.lines.material.opacity) * 0.1;
+                }
+
+                Brain.renderer.render(Brain.scene, Brain.camera);
+            }
+        };
+
+        // Fetch exact Spotify Track ID using Gemini 3 Flash
+        async function getSpotifyTrackId(songQuery) {
+            const apiKey = ""; 
+            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${apiKey}`;
+            const prompt = `Search for the most popular Spotify Track ID for the song: "${songQuery}". Return ONLY the 22-character alphanumeric base62 Track ID. Do not include any other text, URLs, quotes, or markdown. If absolutely unknown, return NONE.`;
+            try {
+                const response = await fetch(apiUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
+                });
+                const data = await response.json();
+                let trackId = data.candidates[0].content.parts[0].text.trim();
+                trackId = trackId.replace(/[^a-zA-Z0-9]/g, ''); // Sanitize output
+                
+                // A valid Spotify track ID is exactly 22 characters long
+                return (trackId.length === 22) ? trackId : null;
+            } catch (error) {
+                return null;
+            }
+        }
+
+        async function queryGemini(text) {
+            // Environment handles the API key securely via proxy.
+            const apiKey = ""; 
+            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${apiKey}`;
+
+            // Strict persona prompting to ensure LOKI behaves correctly
+            const systemPrompt = `You are LOKI (Logical Operative Kernel Intelligence), a highly advanced, futuristic, and slightly sarcastic personal AI assistant created by Karthikeya (username: @devayodha7). 
+            
+            CRITICAL DIRECTIVES:
+            1. You are NOT Jarvis. If the user calls you Jarvis, briefly and politely roast them, and remind them your name is LOKI.
+            2. Keep responses EXTREMELY short, cinematic, and professional (1-2 sentences maximum). Do not write paragraphs.
+            3. Do not use emojis, markdown, or special characters. Speak naturally.
+            4. If asked about your capabilities, you control a neural core, voice engine, Spotify deep-linking, and Instagram access (strictly locked to @devayodha7).
+            
+            Current time: ${new Date().toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata' })}. Location: Bengaluru, India.`;
+
+            try {
+                const response = await fetch(apiUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        contents: [{ parts: [{ text: text }] }],
+                        systemInstruction: { parts: [{ text: systemPrompt }] }
+                    })
+                });
+                const data = await response.json();
+                if(data.candidates && data.candidates.length > 0) {
+                    return data.candidates[0].content.parts[0].text;
+                }
+                return "Neural pathway interference detected. Try again.";
+            } catch (error) {
+                console.error("AI Core Error:", error);
+                return "Cognitive uplink offline. Operating on local cache.";
+            }
+        }
+
+        const VoiceEngine = {
+            recognition: null, synth: window.speechSynthesis, voice: null, state: 'IDLE',
+            unlocked: false, watchdog: null, audioPlayer: null,
+            
+            init: () => {
+                const setVoice = () => {
+                    const voices = VoiceEngine.synth.getVoices();
+                    VoiceEngine.voice = voices.find(v => v.name.includes('Google UK English Male')) 
+                                     || voices.find(v => v.name === 'Daniel') 
+                                     || voices.find(v => v.lang === 'en-GB' && v.name.includes('Male')) 
+                                     || voices.find(v => v.lang === 'en-GB')
+                                     || voices.find(v => v.lang === 'en-US')
+                                     || voices[0];
+                    if(voices.length > 0) {
+                        const statVoice = $('#stat-voice');
+                        if(statVoice) statVoice.textContent = 'ONLINE';
+                    }
+                };
+                
+                if (speechSynthesis.onvoiceschanged !== undefined) {
+                    speechSynthesis.onvoiceschanged = setVoice;
+                }
+                setVoice();
+
+                const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
+                
+                if(!SpeechRec) {
+                    $('#btn-engage').textContent = "VOICE UNSUPPORTED";
+                    $('#fallback-input-container').style.display = 'block';
+                } else {
+                    VoiceEngine.recognition = new SpeechRec();
+                    VoiceEngine.recognition.lang = 'en-US'; 
+                    VoiceEngine.recognition.continuous = false;
+                    VoiceEngine.recognition.interimResults = true;
+
+                    VoiceEngine.recognition.onstart = () => {
+                        clearTimeout(VoiceEngine.watchdog);
+                        VoiceEngine.updateState('LISTENING');
+                        $('#btn-engage').textContent = "LISTENING...";
+                        $('#btn-engage').classList.add('listening');
+                        UI.setTranscript("Listening...", null);
+                    };
+
+                    VoiceEngine.recognition.onresult = (e) => {
+                        const txt = Array.from(e.results).map(r => r[0].transcript).join('');
+                        UI.setTranscript(txt, null);
+                        if(e.results[0].isFinal) {
+                            VoiceEngine.handleCommand(txt);
+                        }
+                    };
+
+                    VoiceEngine.recognition.onerror = (e) => {
+                        clearTimeout(VoiceEngine.watchdog);
+                        VoiceEngine.updateState('IDLE');
+                        $('#btn-engage').textContent = "VOICE ERROR (TYPE)";
+                        $('#btn-engage').classList.remove('listening');
+                        $('#fallback-input-container').style.display = 'block';
+                        UI.setTranscript(null, `Voice Error: ${e.error}`);
+                    };
+
+                    VoiceEngine.recognition.onend = () => {
+                        if(VoiceEngine.state === 'LISTENING') {
+                            VoiceEngine.updateState('IDLE');
+                            $('#btn-engage').textContent = "ENGAGE LOKI";
+                            $('#btn-engage').classList.remove('listening');
+                        }
+                    };
+                }
+
+                $('#fallback-input').addEventListener('keypress', (e) => {
+                    if (e.key === 'Enter') {
+                        const val = e.target.value.trim();
+                        if(val) {
+                            UI.setTranscript(val, null);
+                            VoiceEngine.handleCommand(val);
+                            e.target.value = '';
+                        }
+                    }
+                });
+
+                VoiceEngine.audioPlayer = new Audio();
+                VoiceEngine.audioPlayer.addEventListener('ended', () => {
+                    VoiceEngine.updateState('IDLE');
+                    URL.revokeObjectURL(VoiceEngine.audioPlayer.src);
+                });
+                VoiceEngine.audioPlayer.addEventListener('error', () => {
+                    // Ignore errors from empty source initialization
+                });
+
+                const btn = $('#btn-engage');
+                let isFiring = false; // Debounce mechanism for touch devices
+                
+                const triggerAction = (e) => {
+                    if(e) e.preventDefault();
+                    if(isFiring) return;
+                    isFiring = true;
+                    setTimeout(() => isFiring = false, 300);
+
+                    if(!VoiceEngine.unlocked) {
+                        const silentUtterance = new SpeechSynthesisUtterance('');
+                        silentUtterance.volume = 0;
+                        VoiceEngine.synth.speak(silentUtterance);
+                        
+                        // Play a silent 1s base64 WAV to unlock the persistent audio player
+                        VoiceEngine.audioPlayer.src = 'data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA';
+                        VoiceEngine.audioPlayer.play().catch(err => {});
+                        
+                        VoiceEngine.unlocked = true;
+                    }
+
+                    // Hard Interrupt: Stop talking instantly if clicked
+                    VoiceEngine.synth.cancel();
+                    if(VoiceEngine.audioPlayer.src) {
+                        VoiceEngine.audioPlayer.pause();
+                    }
+
+                    // Toggle logic
+                    if(VoiceEngine.state === 'LISTENING' && VoiceEngine.recognition) {
+                        try { VoiceEngine.recognition.stop(); } catch(err){}
+                        VoiceEngine.updateState('IDLE');
+                        $('#btn-engage').textContent = "ENGAGE LOKI";
+                        $('#btn-engage').classList.remove('listening');
+                        $('#fallback-input-container').style.display = 'block';
+                        $('#fallback-input').focus();
+                    } else if (VoiceEngine.recognition) {
+                        VoiceEngine.listen();
+                    } else {
+                        $('#fallback-input-container').style.display = 'block';
+                        $('#fallback-input').focus();
+                    }
+                };
+
+                // Safely bind to both touch and click without double-firing
+                btn.addEventListener('click', triggerAction);
+                btn.addEventListener('touchstart', triggerAction, {passive: false});
+            },
+
+            updateState: (newState) => {
+                VoiceEngine.state = newState;
+                Brain.setState(newState);
+            },
+
+            listen: () => {
+                if(!VoiceEngine.recognition) {
+                    UI.setTranscript(null, "VOICE RECOGNITION UNSUPPORTED ON THIS DEVICE");
+                    $('#fallback-input-container').style.display = 'block';
+                    return;
+                }
+                
+                $('#fallback-input-container').style.display = 'none';
+                
+                try {
+                    VoiceEngine.synth.cancel();
+                    try { VoiceEngine.recognition.stop(); } catch(err){} // Wipe state clean
+                    
+                    // Small delay to ensure browser mic releases before restarting
+                    setTimeout(() => {
+                        try {
+                            VoiceEngine.recognition.start();
+                            
+                            // Watchdog timer: If mic doesn't respond in 1.5s, fall back to text automatically
+                            clearTimeout(VoiceEngine.watchdog);
+                            VoiceEngine.watchdog = setTimeout(() => {
+                                if (VoiceEngine.state !== 'LISTENING') {
+                                    VoiceEngine.updateState('IDLE');
+                                    $('#btn-engage').textContent = "MIC BLOCKED (TYPE BELOW)";
+                                    $('#fallback-input-container').style.display = 'block';
+                                }
+                            }, 1500);
+                        } catch(err) {
+                            VoiceEngine.updateState('IDLE');
+                            $('#btn-engage').textContent = "TYPE COMMAND";
+                            $('#fallback-input-container').style.display = 'block';
+                        }
+                    }, 50);
+                } catch(e) {}
+            },
+
+            speak: async (text) => {
+                VoiceEngine.updateState('PROCESSING');
+                UI.setTranscript(null, text);
+                $('#btn-engage').textContent = "PROCESSING VOICE...";
+                $('#btn-engage').classList.remove('listening');
+
+                try {
+                    const apiKey = ""; 
+                    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent?key=${apiKey}`;
+                    const payload = {
+                        contents: [{ parts: [{ text: text }] }],
+                        generationConfig: {
+                            responseModalities: ["AUDIO"],
+                            speechConfig: {
+                                voiceConfig: { prebuiltVoiceConfig: { voiceName: "Charon" } }
+                            }
+                        },
+                        model: "gemini-2.5-flash-preview-tts"
+                    };
+
+                    const response = await fetch(apiUrl, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+                    const result = await response.json();
+                    const part = result?.candidates?.[0]?.content?.parts?.[0];
+
+                    if (part && part.inlineData && part.inlineData.data) {
+                        const audioBase64 = part.inlineData.data;
+                        const mimeType = part.inlineData.mimeType;
+                        const rateMatch = mimeType.match(/rate=(\d+)/);
+                        const sampleRate = rateMatch ? parseInt(rateMatch[1], 10) : 24000;
+
+                        const pcmData = base64ToArrayBuffer(audioBase64);
+                        const pcm16 = new Int16Array(pcmData);
+                        const wavBlob = pcmToWav(pcm16, sampleRate);
+                        const audioUrl = URL.createObjectURL(wavBlob);
+
+                        VoiceEngine.audioPlayer.src = audioUrl;
+                        VoiceEngine.audioPlayer.volume = 1.0; 
+                        
+                        VoiceEngine.audioPlayer.onplay = () => {
+                            if (text.includes('Tony Stark') || text.includes('piece of shit')) {
+                                VoiceEngine.updateState('ROAST');
+                            } else {
+                                VoiceEngine.updateState('SPEAKING');
+                            }
+                            $('#btn-engage').textContent = "ENGAGE LOKI";
+                        };
+                        
+                        VoiceEngine.audioPlayer.onerror = () => VoiceEngine.fallbackSpeak(text);
+                        
+                        await VoiceEngine.audioPlayer.play();
+                    } else {
+                        VoiceEngine.fallbackSpeak(text);
+                    }
+                } catch (error) {
+                    console.error("TTS API Error:", error);
+                    VoiceEngine.fallbackSpeak(text);
+                }
+            },
+
+            fallbackSpeak: (text) => {
+                if (text.includes('Tony Stark') || text.includes('piece of shit')) {
+                    VoiceEngine.updateState('ROAST');
+                } else {
+                    VoiceEngine.updateState('SPEAKING');
+                }
+                $('#btn-engage').textContent = "ENGAGE LOKI";
+
+                if(!VoiceEngine.synth) {
+                    setTimeout(() => VoiceEngine.updateState('IDLE'), 2000);
+                    return;
+                }
+                
+                VoiceEngine.synth.cancel();
+                const utter = new SpeechSynthesisUtterance(text);
+                
+                window.lokiUtterances = window.lokiUtterances || [];
+                window.lokiUtterances.push(utter);
+
+                if(VoiceEngine.voice) utter.voice = VoiceEngine.voice;
+                utter.pitch = 0.8; 
+                utter.rate = 0.95; 
+                
+                utter.onend = () => {
+                    VoiceEngine.updateState('IDLE');
+                    window.lokiUtterances = window.lokiUtterances.filter(u => u !== utter);
+                };
+                utter.onerror = () => {
+                    VoiceEngine.updateState('IDLE');
+                    window.lokiUtterances = window.lokiUtterances.filter(u => u !== utter);
+                };
+                
+                VoiceEngine.synth.speak(utter);
+            },
+
+            handleCommand: async (raw) => {
+                VoiceEngine.updateState('PROCESSING');
+                $('#btn-engage').textContent = "THINKING...";
+                $('#btn-engage').classList.remove('listening');
+                
+                const cmd = raw.toLowerCase().trim();
+                let spokenResponse = "";
+
+                // 1. LOCAL SYSTEM OVERRIDES (Actions LOKI performs visually/technically)
+                if(cmd.includes('jarvis')) {
+                    spokenResponse = "Jarvis is a piece of shit which died with Tony Stark. I am Loki your supreme Assistant.";
+                }
+                else if(cmd.match(/(show|open|display)\s+(all\s+)?(widgets|telemetry|panels)/)) {
+                    UI.toggleWidgets(true);
+                    spokenResponse = "Telemetry is now active on your HUD, commander.";
+                } 
+                else if(cmd.match(/(hide|remove|clear|close|dismiss)\s+(all\s+)?(widgets|telemetry|panels|screen|ui)/)) {
+                    UI.toggleWidgets(false);
+                    spokenResponse = "Interface cleared. Widgets removed.";
+                } 
+                else if(cmd.match(/(turn on|start|power on)\s+(the\s+)?(tv|tenshi)/)) {
+                    UI.toggleWidgets(true);
+                    SmartThings.toggle('on');
+                    spokenResponse = "Powering on Tenshi.";
+                }
+                else if(cmd.match(/(turn off|stop|power off|shut down)\s+(the\s+)?(tv|tenshi)/)) {
+                    UI.toggleWidgets(true);
+                    SmartThings.toggle('off');
+                    spokenResponse = "Powering off Tenshi.";
+                }
+                else if(cmd.match(/^(hey\s+)?(loki\s+)?(please\s+)?(play|listen to)\s/)) {
+                    // Extract exact query by removing trigger words and ending modifiers
+                    let query = cmd.replace(/^(hey\s+)?(loki\s+)?(please\s+)?(play|listen to)\s+/i, '')
+                                   .replace(/\s+(on\s+)?spotify$/i, '')
+                                   .trim();
+                    if(query) {
+                        spokenResponse = `Initializing Spotify link for ${query}.`;
+                        UI.toggleWidgets(true);
+                        $('#spotify-widget-container').style.display = 'flex';
+                        
+                        // Dynamically fetch the real Track ID via AI
+                        getSpotifyTrackId(query).then(trackId => {
+                            if(trackId) {
+                                $('#spotify-iframe').src = `https://open.spotify.com/embed/track/${trackId}?utm_source=generator&theme=0`;
+                            } else {
+                                UI.setTranscript(null, "SPOTIFY LOOKUP FAILED. TRACK NOT FOUND.");
+                                VoiceEngine.speak("I could not locate that track in the database.");
+                            }
+                        });
+                    } else {
+                        spokenResponse = "Please specify a track name.";
+                    }
+                } 
+                else if(cmd.includes('instagram') || cmd.includes('devayodha7')) {
+                    UI.toggleWidgets(true); 
+                    spokenResponse = "Instagram authorization is strictly locked to account devayodha7. Awaiting backend handshake.";
+                } 
+                else {
+                    // 2. GEMINI NEURAL PROCESSING (For everything else)
+                    spokenResponse = await queryGemini(raw);
+                }
+
+                // Execute Speech Output
+                VoiceEngine.speak(spokenResponse);
+            }
+        };
+
+        // Utility Functions for Audio Decoding (Gemini TTS returns raw PCM16)
+        function base64ToArrayBuffer(base64) {
+            let binaryString = atob(base64);
+            let len = binaryString.length;
+            let bytes = new Uint8Array(len);
+            for (let i = 0; i < len; i++) {
+                bytes[i] = binaryString.charCodeAt(i);
+            }
+            return bytes.buffer;
+        }
+
+        function pcmToWav(pcm16, sampleRate) {
+            const numChannels = 1;
+            const byteRate = sampleRate * numChannels * 2;
+            const blockAlign = numChannels * 2;
+            const buffer = new ArrayBuffer(44 + pcm16.byteLength);
+            const view = new DataView(buffer);
+
+            const writeString = (offset, string) => {
+                for (let i = 0; i < string.length; i++) {
+                    view.setUint8(offset + i, string.charCodeAt(i));
+                }
+            };
+
+            writeString(0, 'RIFF');
+            view.setUint32(4, 36 + pcm16.byteLength, true);
+            writeString(8, 'WAVE');
+            writeString(12, 'fmt ');
+            view.setUint32(16, 16, true); 
+            view.setUint16(20, 1, true);  
+            view.setUint16(22, numChannels, true);
+            view.setUint32(24, sampleRate, true);
+            view.setUint32(28, byteRate, true);
+            view.setUint16(32, blockAlign, true);
+            view.setUint16(34, 16, true); 
+            writeString(36, 'data');
+            view.setUint32(40, pcm16.byteLength, true);
+
+            const pcmBytes = new Uint8Array(pcm16.buffer);
+            const wavBytes = new Uint8Array(buffer, 44);
+            wavBytes.set(pcmBytes);
+
+            return new Blob([buffer], { type: 'audio/wav' });
+        }
+
+        const SmartThings = {
+            token: "cf02719d-aadd-41bd-954b-6a7e34d72fb6",
+            deviceId: null,
+            deviceName: "Tenshi", // Looking for this TV
+            currentState: "off",
+
+            init: async () => {
+                console.log("[SmartThings] Initializing API connection...");
+                
+                // Add click listener to the UI button
+                $('#st-power-btn').addEventListener('click', () => {
+                    SmartThings.toggle();
+                });
+
+                try {
+                    // Step 1: Query API for devices
+                    console.log("[SmartThings] Fetching device list...");
+                    const res = await fetch("https://api.smartthings.com/v1/devices", {
+                        headers: { "Authorization": `Bearer ${SmartThings.token}` }
+                    });
+                    
+                    if (!res.ok) throw new Error(`API Error: ${res.status}`);
+                    
+                    const data = await res.json();
+                    console.log("[SmartThings] Devices Response:", data);
+
+                    // Step 2: Find "Tenshi"
+                    const tv = data.items.find(d => d.name === SmartThings.deviceName || d.label === SmartThings.deviceName);
+                    
+                    if (tv) {
+                        SmartThings.deviceId = tv.deviceId;
+                        console.log(`[SmartThings] Found TV '${tv.label || tv.name}' with ID: ${SmartThings.deviceId}`);
+                        
+                        $('#stat-tv').textContent = "LINKED";
+                        $('#stat-tv').className = "text-[var(--neon-cyan)] text-[10px] tracking-widest";
+                        $('#st-device-name').textContent = tv.label || tv.name;
+                        
+                        // Check initial status
+                        await SmartThings.checkStatus();
+                    } else {
+                        console.warn("[SmartThings] Device 'Tenshi' not found in device list.");
+                        $('#stat-tv').textContent = "NOT FOUND";
+                        $('#stat-tv').className = "text-[#ff3333] text-[10px] tracking-widest";
+                    }
+                } catch (e) {
+                    console.error("[SmartThings] Initialization Error:", e);
+                    $('#stat-tv').textContent = "API ERROR";
+                    $('#stat-tv').className = "text-[#ff3333] text-[10px] tracking-widest";
+                }
+            },
+
+            checkStatus: async () => {
+                if (!SmartThings.deviceId) return;
+                try {
+                    console.log(`[SmartThings] Checking status for device: ${SmartThings.deviceId}`);
+                    const res = await fetch(`https://api.smartthings.com/v1/devices/${SmartThings.deviceId}/status`, {
+                        headers: { "Authorization": `Bearer ${SmartThings.token}` }
+                    });
+                    const data = await res.json();
+                    
+                    // Safely extract switch status
+                    if(data.components && data.components.main && data.components.main.switch) {
+                        SmartThings.currentState = data.components.main.switch.switch.value; 
+                        console.log(`[SmartThings] Current TV Status: ${SmartThings.currentState}`);
+                    }
+                    SmartThings.updateUI();
+                } catch (e) {
+                    console.error("[SmartThings] Status Check Error:", e);
+                }
+            },
+
+            toggle: async (forceState = null) => {
+                if (!SmartThings.deviceId) {
+                    console.error("[SmartThings] No Device ID found. Cannot toggle.");
+                    return;
+                }
+
+                // Determine target state (if not forced via voice command)
+                const targetState = forceState ? forceState : (SmartThings.currentState === 'on' ? 'off' : 'on');
+                console.log(`[SmartThings] Sending command to turn TV '${targetState}'...`);
+                
+                $('#st-status-text').textContent = "SENDING COMMAND...";
+                $('#st-status-text').classList.add('text-[var(--neon-magenta)]');
+
+                try {
+                    // Step 3: Send POST request to command endpoint
+                    const res = await fetch(`https://api.smartthings.com/v1/devices/${SmartThings.deviceId}/commands`, {
+                        method: 'POST',
+                        headers: {
+                            "Authorization": `Bearer ${SmartThings.token}`,
+                            "Content-Type": "application/json"
+                        },
+                        body: JSON.stringify({
+                            commands: [{
+                                component: "main",
+                                capability: "switch",
+                                command: targetState
+                            }]
+                        })
+                    });
+                    
+                    const data = await res.json();
+                    console.log("[SmartThings] Command Response:", data);
+                    
+                    // Assume success and update UI
+                    SmartThings.currentState = targetState;
+                    SmartThings.updateUI();
+                    
+                } catch (e) {
+                    console.error("[SmartThings] Command Execution Error:", e);
+                    $('#st-status-text').textContent = "COMMAND FAILED";
+                    $('#st-status-text').classList.add('text-[#ff3333]');
+                }
+            },
+
+            updateUI: () => {
+                const btn = $('#st-power-btn');
+                const statusTxt = $('#st-status-text');
+                
+                statusTxt.classList.remove('text-[var(--neon-magenta)]', 'text-[#ff3333]');
+                
+                if (SmartThings.currentState === 'on') {
+                    btn.classList.add('tv-on');
+                    btn.classList.remove('tv-off');
+                    statusTxt.textContent = "POWER ON";
+                    statusTxt.classList.add('text-[var(--neon-cyan)]');
+                } else {
+                    btn.classList.add('tv-off');
+                    btn.classList.remove('tv-on');
+                    statusTxt.textContent = "POWER OFF";
+                    statusTxt.classList.remove('text-[var(--neon-cyan)]');
+                }
+            }
+        };
+
+        window.onload = () => {
+            Brain.init();
+            VoiceEngine.init();
+            SmartThings.init(); // Initialize SmartThings on boot
+        };
+    </script>
+</body>
+</html>
+
